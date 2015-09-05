@@ -1,4 +1,4 @@
-;; THIS IS A SAMPLE CODE
+;; INTRODUCTION
 ;; I generate a population of finite state automata randomly
 ;; in each cycle, they are pair-matched to play a repeated game
 ;; their *fitness* is their relative payoff.
@@ -10,7 +10,7 @@
 ;; and we randomised over this vector to choose which automata to ressurrect
 ;; independently.
 
-;; To keep the sample code simple, the game is a 2 player game,
+;; The game is a 2 player game,
 ;; each player has 2 possible stragies {Cooperate, Defect},
 ;; and they move simultaneously.
 ;; Here is the payoff matrix:
@@ -22,10 +22,11 @@
 ;; If one cooperates and the other defects, the cooperator is called "sucker"
 ;; because he gets 0 and the other gets 4. The payoff 4 is called "temptation".
 ;; If both defect, they both get the "punishment" payoff of 1.
-
 ;; This game captures the tradeoff between self interest (temptation)
 ;; and social welfare (both get reward).
 
+
+;; CODE
 (require plot) ; this is to plot the result
 ;; the result is the population average:
 ;; how much an average automaton gets in the game in each cycle
@@ -35,9 +36,6 @@
 ;; of everybody defecting everybody
 (plot-new-window? #t)
 
-;; Thanks to the blog post of Tim Thornton,
-;; http://timthornton.net/blog/id/538fa6f2f09a16ba0674813d
-;; i know where to start
 ;; AUTOMATON
 (struct action (event result) #:transparent #:mutable)
 ; a transition rule: an event and the result state
@@ -58,7 +56,7 @@
      (this-action? an-event an-action))
    actions))
 ; after the right action has been chosen,
-; extract the result of that action
+; extract the result of that action, given an event
 (define (act an-event actions)
   (let ([result (filter-action an-event actions)])
     (if (null? result)
@@ -75,7 +73,7 @@
    (lambda (a-state)
      (this-state? a-name a-state))
    states))
-; an event happens, how the automaton will react?
+; extract the result of the needed action, given an event
 (define (react an-event an-auto)
   (let ([result-state (filter-state (automaton-current-state an-auto)
                                     (automaton-states an-auto))])
@@ -84,66 +82,76 @@
         (act an-event
              (state-actions
               (car result-state))))))
-; update the state of the auto (new auto created)
+; update the state of the auto, return the auto
 (define (update old-auto new-state)
-  (set-automaton-current-state! old-auto new-state))
+  (begin (set-automaton-current-state! old-auto new-state)
+         old-auto))
 
-(define accommodator
+;; CLASSIC AUTOMATA
+;; let 0 = cooperate, 1 = defect
+;; some classic automata
+;; the all defector has 2 states of cooperate and defect
+;; but it always defects, no matter what
+;; the opponent may play cooperate or defect
+;; it doesnt care, it always stay in the state defect
+(define all-defects
   (automaton 1
-             (list (state 0 (list (action 0 2)
-                                  (action 1 1)
-                                  (action 2 0)))
-                   (state 1 (list (action 0 2)
-                                  (action 1 1)
-                                  (action 2 0)))
-                   (state 2 (list (action 0 2)
-                                  (action 1 1)
-                                  (action 2 0))))))
-(define all-highs
-  (automaton 2
-             (list (state 0 (list (action 0 2)
-                                  (action 1 2)
-                                  (action 2 2)))
-                   (state 1 (list (action 0 2)
-                                  (action 1 2)
-                                  (action 2 2)))
-                   (state 2 (list (action 0 2)
-                                  (action 1 2)
-                                  (action 2 2))))))
-; generate random automaton (random current state, random result-state
-; after each event
+             (list (state 0 (list (action 0 1)
+                                  (action 1 1)))
+                   (state 1 (list (action 0 1)
+                                  (action 1 1))))))
+(define all-cooperates
+  (automaton 0
+             (list (state 0 (list (action 0 0)
+                                  (action 1 0)))
+                   (state 1 (list (action 0 0)
+                                  (action 1 0))))))
+;; the tit for tat starts out optimistic, it cooperates initially
+;; however, if the opponent defects, it punishes by switching to defecting
+;; if the opponent cooperates, it returns to play cooperate again
+(define tit-for-tat
+  (automaton 0
+             (list (state 0 (list (action 0 0)
+                                  (action 1 1)))
+                   (state 1 (list (action 0 0)
+                                  (action 1 1))))))
+;; the grim trigger also starts out optimistic,
+;; but the opponent defects for just once then
+;; it jumps to defect forever
+;; it doesnt forgive, and doesnt forget
+(define grim-trigger
+  (automaton 0
+             (list (state 0 (list (action 0 0)
+                                  (action 1 1)))
+                   (state 1 (list (action 0 1)
+                                  (action 1 1))))))
+
+;; generate random automaton (random current state,
+;; random result state after each event
 (define (generate-auto)
-  (automaton (random 3)
-             (list (state 0 (list (action 0 (random 3))
-                                  (action 1 (random 3))
-                                  (action 2 (random 3))))
-                   (state 1 (list (action 0 (random 3))
-                                  (action 1 (random 3))
-                                  (action 2 (random 3))))
-                   (state 2 (list (action 0 (random 3))
-                                  (action 1 (random 3))
-                                  (action 2 (random 3)))))))
+  (automaton (random 2)
+             (list (state 0 (list (action 0 (random 2))
+                                  (action 1 (random 2))))
+                   (state 1 (list (action 0 (random 2))
+                                  (action 1 (random 2)))))))
 
-(define (match-claims claims)
-  (if (<= (apply + claims) 2)
-      (map convert-payoff claims)
-      (list 0 0)))
+;; PAYOFF MATRIX
+(define (match-strategies strategies)
+  (cond [(equal? strategies (list 0 0)) (list 3 3)]
+        [(equal? strategies (list 0 1)) (list 0 4)]
+        [(equal? strategies (list 1 0)) (list 4 0)]
+        [(equal? strategies (list 1 1)) (list 1 1)]))
 
-(define (convert-payoff x)
-  (cond [(= x -1) 0]
-        [(= x 0) 2]
-        [(= x 1) 5]
-        [(= x 2) 8]))
-
-(define (match-pair* auto1 auto2 results previous-claims countdown)
+;; MATCH PAIR
+(define (match-pair* auto1 auto2 results previous-strategies countdown)
   (if (zero? countdown)
       results
-      (let ([reaction1 (react (last previous-claims) auto1)]
-            [reaction2 (react (car previous-claims) auto2)])
-        (match-pair* (begin (update auto1 reaction1) auto1)
-                     (begin (update auto2 reaction2) auto2)
+      (let ([reaction1 (react (last previous-strategies) auto1)]
+            [reaction2 (react (car previous-strategies) auto2)])
+        (match-pair* (update auto1 reaction1)
+                     (update auto2 reaction2)
                      (append results (list
-                                      (match-claims previous-claims)))
+                                      (match-strategies previous-strategies)))
                      (list reaction1 reaction2)
                      (sub1 countdown)))))
 
@@ -156,27 +164,19 @@
                (map automaton-current-state automaton-pair)
                rounds-per-match))
 
-;; generate population
+;; GENERATE POPULATION
 (define A
   (for/list
       ([n 100])
     (generate-auto)))
 
-
-;; in each match, take mean of round results for each automaton
-;; returns a pair of means
+;; in each match, take the sum of round results for each automaton
+;; returns a pair of sums
 (define (take-sums round-results)
   (map (lambda (f) (apply +  (map f round-results)))
        (list first second)))
 
-(define (take-discounts delta round-results)
-  (map (lambda (f)
-         (sum
-          (for/list ([i (length round-results)])
-            (* (list-ref (map f round-results) i)
-               (expt delta i)))))
-       (list first second)))
-
+;; MATCH POPULATION
 (define (match-population population rounds-per-match)
   (for/list ([i (/ (length population)
                    2)])
@@ -186,6 +186,7 @@
                   (list-ref population (add1 (* 2 i))))
                  rounds-per-match))))
 
+;; FITNESS CALCULATION
 ;; from the matching result, calculate the fitness
 (define (reductions-h f accumulated init a-list)
   (if (null? a-list)
@@ -218,7 +219,9 @@
     (flatten
      (match-population population rounds-per-match)))))
 
-;; generate new automaton by randomising over the fitness vector
+;; REGENERATE FITTEST AUTOMATA
+;; at the end of the cycle, i kill 10%
+;; so i resurrect automata by randomising over the fitness vector
 (define (randomise-over-fitness accumulated-payoff-percentage population speed)
   (let
       ([len (length population)])
@@ -230,7 +233,8 @@
           (list-ref population i))))))
 
 (define population-mean '())
-;; evolve the population over cycles
+
+;; EVOLVE THE POPULATION OVER CYCLES
 (define (evolve population cycles speed rounds-per-match)
   (let* ([round-results (match-population population rounds-per-match)]
          [average-payoff (exact->inexact (/ (apply + (flatten round-results))
@@ -252,3 +256,11 @@
          [coors (map list (build-list l values)
                      data)])
     (plot (lines coors))))
+
+;; ACKNOWLEDGEMENT
+;; Thanks to the blog post of Tim Thornton,
+;; http://timthornton.net/blog/id/538fa6f2f09a16ba0674813d
+;; i know where to start
+;; Thanks to Racket mailing list
+;; https://groups.google.com/forum/#!topic/racket-users/4o1goSwrLHA
+;; and IRC #racket for all the discussions
